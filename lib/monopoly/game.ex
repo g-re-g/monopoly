@@ -1,8 +1,63 @@
 defmodule Monopoly.Game do
   @moduledoc """
-  TODO
+  A tiny version of (not)monopoly that you can suspend and resume.
   """
   use GenServer
+  require Logger
+
+  #
+  # User Interface
+  #
+
+  @doc """
+  Start a new game for a set of players.
+  Fails to start if:
+    - The number of players is invalid
+    - TODO: The ID is already taken
+  """
+  def new_game({players, game_id}) do
+    num_players = length(players)
+
+    if num_players > 1 and num_players < 10 do
+      GenServer.start_link(__MODULE__, {:new_game, game_id, players})
+    else
+      raise ArgumentError, "Number of players must be greater than 1 and less than 10."
+    end
+  end
+
+  @doc """
+  Resume a game by ID.
+  Fails to start if:
+    - The backup doesn't exist
+    - The backup has been corrupted
+    - TODO: The game is already started
+  """
+  def resume_game(game_id) do
+    with json <- File.read!("#{@backup_dir}/#{game_id}.json"),
+         state <- Jason.decode!(json) do
+      GenServer.start_link(__MODULE__, {:resume_game, game_id, state})
+    end
+  end
+
+  @doc """
+  Susped a game.
+  Wait for the current action to end and stop the server.
+  """
+  def suspend_game(pid) do
+    GenServer.stop(pid, :normal)
+  end
+
+  @doc """
+  Send a roll command for a user to a game.
+  Will only actually roll if the user is allowed to.
+  """
+  def roll(pid, player) do
+    GenServer.call(pid, {"roll", player})
+  end
+
+  #
+  # Internal Server Interface
+  #
 
   @backup_dir "/Users/greg/Scratch/monopoly/game_backups"
 
@@ -33,37 +88,6 @@ defmodule Monopoly.Game do
     }
   ]
 
-  # User Interface
-
-  @doc """
-  TODO
-  """
-  def new_game({players, game_id}) do
-    num_players = length(players)
-
-    if num_players > 1 and num_players < 10 do
-      GenServer.start_link(__MODULE__, {:new_game, game_id, players})
-    else
-      raise ArgumentError, "Number of players must be greater than 1 and less than 10."
-    end
-  end
-
-  @doc """
-  TODO
-  """
-  def resume_game(game_id) do
-    with json <- File.read!("#{@backup_dir}/#{game_id}.json"),
-         state <- Jason.decode!(json) do
-      GenServer.start_link(__MODULE__, {:resume_game, game_id, state})
-    end
-  end
-
-  def roll(pid, player) do
-    GenServer.call(pid, {"roll", player})
-  end
-
-  # Internal Server Interface
-
   @impl true
   def init({:new_game, game_id, player_ids}) do
     players =
@@ -85,10 +109,12 @@ defmodule Monopoly.Game do
       "roll_order" => player_ids
     }
 
+    Logger.info("Starting new game with id: #{game_id}")
     {:ok, state}
   end
 
   def init({:resume_game, game_id, state}) do
+    Logger.info("Resuming game with id: #{game_id}")
     {:ok, Map.put(state, "id", game_id)}
   end
 
@@ -118,7 +144,16 @@ defmodule Monopoly.Game do
     {:noreply, state}
   end
 
+  @impl true
+  def terminate(:normal, state) do
+    Logger.info("Suspending game with id: #{inspect(state["id"])}")
+    :ok
+  end
+
+  #
   # Internal Helper Interface
+  #
+
   defp roll_die() do
     :rand.uniform(6)
   end
