@@ -24,3 +24,6 @@ monopoly-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Backups of games
+/game_backups/*.json
