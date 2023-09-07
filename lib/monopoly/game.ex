@@ -5,6 +5,8 @@ defmodule Monopoly.Game do
   use GenServer
   require Logger
 
+  @backup_dir "/Users/greg/Scratch/monopoly/game_backups"
+
   #
   # User Interface
   #
@@ -13,13 +15,16 @@ defmodule Monopoly.Game do
   Start a new game for a set of players.
   Fails to start if:
     - The number of players is invalid
-    - TODO: The ID is already taken
   """
-  def new_game({players, game_id}) do
+  def new_game(players, game_id) do
     num_players = length(players)
+    if File.exists?("#{@backup_dir}/#{game_id}.json") do
+      raise ArgumentError, "Game already exists with id: #{game_id}"
+    end
 
     if num_players > 1 and num_players < 10 do
-      GenServer.start_link(__MODULE__, {:new_game, game_id, players})
+      process_name = {:via, Registry, {Monopoly.Game.Registry, game_id}}
+      GenServer.start_link(__MODULE__, {:new_game, game_id, players}, name: process_name)
     else
       raise ArgumentError, "Number of players must be greater than 1 and less than 10."
     end
@@ -30,18 +35,21 @@ defmodule Monopoly.Game do
   Fails to start if:
     - The backup doesn't exist
     - The backup has been corrupted
-    - TODO: The game is already started
   """
   def resume_game(game_id) do
     with json <- File.read!("#{@backup_dir}/#{game_id}.json"),
          state <- Jason.decode!(json) do
-      GenServer.start_link(__MODULE__, {:resume_game, game_id, state})
+      process_name = {:via, Registry, {Monopoly.Game.Registry, game_id}}
+      GenServer.start_link(__MODULE__, {:resume_game, game_id, state}, name: process_name)
     end
   end
 
   @doc """
   Susped a game.
   Wait for the current action to end and stop the server.
+  Exit signals wait in the same queue as other messages which means
+  this doesn't cause an immediate shutdown. It waits for other messages to be
+  processed before terminate/2 is reached.
   """
   def suspend_game(pid) do
     GenServer.stop(pid, :normal)
@@ -58,8 +66,6 @@ defmodule Monopoly.Game do
   #
   # Internal Server Interface
   #
-
-  @backup_dir "/Users/greg/Scratch/monopoly/game_backups"
 
   @base_game_board [
     %{
@@ -139,9 +145,8 @@ defmodule Monopoly.Game do
   end
 
   @impl true
-  def handle_cast(:dump_state, state) do
-    IO.inspect(state)
-    {:noreply, state}
+  def handle_call(:dump_state, _from, state) do
+    {:reply, state, state}
   end
 
   @impl true

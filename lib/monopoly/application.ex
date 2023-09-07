@@ -7,7 +7,9 @@ defmodule Monopoly.Application do
 
   @impl true
   def start(_type, _args) do
+    # Start the game registry
     children = [
+      {Registry, keys: :unique, name: Monopoly.Game.Registry}
       # Starts a worker by calling: Monopoly.Worker.start_link(arg)
       # {Monopoly.Worker, arg}
     ]
